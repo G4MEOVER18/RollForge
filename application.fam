@@ -1,0 +1,13 @@
+App(
+    appid="rollforge",
+    name="RollForge",
+    apptype=FlipperAppType.EXTERNAL,
+    targets=["f7"],
+    entry_point="rollforge_app",
+    stack_size=4 * 1024,
+    fap_category="Sub-GHz",
+    fap_description="RollForge — RollJam, RollLab & RF Jammer unified app",
+    fap_version=(1, 0),
+    fap_author="G4MEOVER18",
+    fap_weburl="https://github.com/G4MEOVER18/RollForge",
+)
