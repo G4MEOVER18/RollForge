@@ -58,22 +58,26 @@ static LevelDuration rl_replay_cb(void* ctx) {
 // RF helpers
 // ---------------------------------------------------------------------------
 static void rl_ref_start(RollForgeApp* app) {
+    if(!app->device) return;
     RfSig* sig = &app->rl.ref_sig;
     sig->count = 0; sig->ready = false;
     s_ref_app = app;
+    app->rl.cap_start_ms = furi_get_tick();
     subghz_devices_idle(app->device);
     subghz_devices_start_async_rx(app->device, rl_rx_ref_cb, NULL);
     app->rf_op = RF_CAPTURING;
 }
 
 static void rl_ref_stop(RollForgeApp* app) {
-    subghz_devices_stop_async_rx(app->device);
     s_ref_app = NULL;
+    if(!app->device) return;
+    subghz_devices_stop_async_rx(app->device);
     subghz_devices_idle(app->device);
     app->rf_op = RF_IDLE;
 }
 
 static void rl_work_start(RollForgeApp* app) {
+    if(!app->device) return;
     app->rl.work_count = 0; app->rl.work_ready = false;
     s_work_app = app;
     subghz_devices_idle(app->device);
@@ -82,16 +86,18 @@ static void rl_work_start(RollForgeApp* app) {
 }
 
 static void rl_work_stop(RollForgeApp* app) {
-    subghz_devices_stop_async_rx(app->device);
     s_work_app = NULL;
+    if(!app->device) return;
+    subghz_devices_stop_async_rx(app->device);
     subghz_devices_idle(app->device);
     app->rf_op = RF_IDLE;
 }
 
 static void rl_stop_any(RollForgeApp* app) {
+    s_ref_app = NULL; s_work_app = NULL; s_rl_rep = NULL;
+    if(!app->device) { app->rf_op = RF_IDLE; return; }
     subghz_devices_stop_async_rx(app->device);
     subghz_devices_stop_async_tx(app->device);
-    s_ref_app = NULL; s_work_app = NULL; s_rl_rep = NULL;
     subghz_devices_idle(app->device);
     app->rf_op = RF_IDLE;
 }
@@ -222,10 +228,7 @@ void rl_tick(RollForgeApp* app) {
             snprintf(m->status, sizeof(m->status), "Aborted");
             break;
         }
-        // Timeout
-        static uint32_t cap_start = 0;
-        if(m->ref_sig.count == 0) cap_start = furi_get_tick();
-        if(!m->ref_sig.ready && (furi_get_tick() - cap_start > RF_TIMEOUT_MS)) {
+        if(!m->ref_sig.ready && (furi_get_tick() - m->cap_start_ms > RF_TIMEOUT_MS)) {
             rl_ref_stop(app);
             m->phase = RL_MENU;
             snprintf(m->status, sizeof(m->status), "Capture timeout");

@@ -25,11 +25,20 @@ typedef struct {
 } RfSig;
 
 // ---- RollJam ----
-typedef enum { RJ_IDLE, RJ_PHASE1, RJ_CAPTURED, RJ_PHASE2, RJ_REPLAY, RJ_DONE } RjPhase;
+typedef enum {
+    RJ_IDLE,
+    RJ_P1_JAM, RJ_P1_RX,   // Phase 1: interlaced jam/rx (non-blocking)
+    RJ_CAPTURED,
+    RJ_P2_JAM, RJ_P2_RX,   // Phase 2: interlaced jam/rx (non-blocking)
+    RJ_REPLAY,
+    RJ_DONE
+} RjPhase;
 typedef struct {
     RjPhase  phase;
     RfSig    sig_a, sig_b;
     volatile size_t tx_pos;
+    uint32_t phase_start_ms; // start of current P1/P2 attempt (for timeout)
+    uint32_t step_start_ms;  // start of current jam or rx window
     char     status[64];
 } ModRollJam;
 
@@ -51,6 +60,7 @@ typedef struct {
     RlAnalysis analysis;
     uint8_t  menu_idx, advance_count, advance_target;
     volatile size_t tx_pos;
+    uint32_t cap_start_ms;
     char     status[64];
 } ModRollLab;
 
@@ -68,6 +78,7 @@ typedef struct {
     ActiveMod           active;
     uint8_t             menu_idx;
     const SubGhzDevice* device;
+    bool                dev_is_ext; // set at init, safe to read from any thread
     uint32_t            frequency;
     RfOp                rf_op;
     volatile bool       abort;

@@ -5,6 +5,7 @@
 bool rollforge_rf_init(RollForgeApp* app) {
     subghz_devices_init();
     app->device = subghz_devices_get_by_name(SUBGHZ_DEVICE_CC1101_EXT_NAME);
+    app->dev_is_ext = (app->device != NULL);
     if(!app->device) app->device = subghz_devices_get_by_name(SUBGHZ_DEVICE_CC1101_INT_NAME);
     if(!app->device) return false;
     subghz_devices_begin(app->device);

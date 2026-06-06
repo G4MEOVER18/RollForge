@@ -1,6 +1,5 @@
 // rollforge_app.c — RollForge unified SubGHz app entry point
 #include "rollforge_app.h"
-#include <string.h>
 #include "rollforge_rf.h"
 #include "module_rolljam.h"
 #include "module_rolllab.h"
@@ -37,12 +36,9 @@ static void rf_draw_menu(Canvas* canvas, RollForgeApp* app) {
     canvas_set_color(canvas, ColorBlack);
 
     // RF indicator bottom-right
-    const char* dev_label = "CC1101?";
-    if(app->device) {
-        const char* name = subghz_devices_get_name(app->device);
-        bool ext = (name && strcmp(name, SUBGHZ_DEVICE_CC1101_EXT_NAME) == 0);
-        dev_label = ext ? "CC1101-EXT" : "CC1101-INT";
-    }
+    const char* dev_label = app->device
+        ? (app->dev_is_ext ? "CC1101-EXT" : "CC1101-INT")
+        : "CC1101 ERR";
     canvas_draw_str_aligned(canvas, 127, 63, AlignRight, AlignBottom, dev_label);
 }
 
