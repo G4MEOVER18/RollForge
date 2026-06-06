@@ -1,5 +1,6 @@
 // module_rolllab.c — RollLab research modes for RollForge
 #include "module_rolllab.h"
+#include "rollforge_rf.h"
 #include <gui/canvas.h>
 #include <lib/subghz/devices/devices.h>
 #include <lib/toolbox/level_duration.h>
@@ -63,8 +64,7 @@ static void rl_ref_start(RollForgeApp* app) {
     sig->count = 0; sig->ready = false;
     s_ref_app = app;
     app->rl.cap_start_ms = furi_get_tick();
-    subghz_devices_idle(app->device);
-    subghz_devices_start_async_rx(app->device, rl_rx_ref_cb, NULL);
+    rollforge_rf_start_rx(app, rl_rx_ref_cb, NULL);
     app->rf_op = RF_CAPTURING;
 }
 
@@ -80,8 +80,7 @@ static void rl_work_start(RollForgeApp* app) {
     if(!app->device) return;
     app->rl.work_count = 0; app->rl.work_ready = false;
     s_work_app = app;
-    subghz_devices_idle(app->device);
-    subghz_devices_start_async_rx(app->device, rl_rx_work_cb, NULL);
+    rollforge_rf_start_rx(app, rl_rx_work_cb, NULL);
     app->rf_op = RF_CAPTURING;
 }
 
@@ -178,9 +177,9 @@ void rl_input(RollForgeApp* app, InputEvent* ev) {
 
     case RL_REPLAY_READY:
         if(ev->key == InputKeyOk) {
+            if(!app->device) { snprintf(m->status, sizeof(m->status), "ERR: No CC1101"); break; }
             m->tx_pos = 0; s_rl_rep = app;
-            subghz_devices_idle(app->device);
-            subghz_devices_start_async_tx(app->device, rl_replay_cb, NULL);
+            rollforge_rf_start_tx(app, rl_replay_cb, NULL);
             app->rf_op = RF_REPLAYING;
             m->phase = RL_REPLAYING;
             snprintf(m->status, sizeof(m->status), "Replaying...");
@@ -212,6 +211,8 @@ void rl_tick(RollForgeApp* app) {
         return;
     }
 
+    uint32_t now = furi_get_tick();
+
     switch(m->phase) {
     case RL_MENU:
     case RL_ANALYZE_VIEW:
@@ -228,7 +229,7 @@ void rl_tick(RollForgeApp* app) {
             snprintf(m->status, sizeof(m->status), "Aborted");
             break;
         }
-        if(!m->ref_sig.ready && (furi_get_tick() - m->cap_start_ms > RF_TIMEOUT_MS)) {
+        if(!m->ref_sig.ready && (now - m->cap_start_ms > RF_TIMEOUT_MS)) {
             rl_ref_stop(app);
             m->phase = RL_MENU;
             snprintf(m->status, sizeof(m->status), "Capture timeout");
@@ -275,24 +276,28 @@ void rl_tick(RollForgeApp* app) {
             snprintf(m->status, sizeof(m->status), "Aborted");
             break;
         }
-        if(m->work_ready && m->work_count >= RF_MIN_EDGES) {
-            rl_work_stop(app);
-            m->advance_count++;
-            notification_message(app->notif, &sequence_success);
-            furi_delay_ms(200);
+        // Tick-basierter Delay nach Signalerfassung (ersetzt blockierendes furi_delay_ms)
+        if(m->work_delay_until) {
+            if(now < m->work_delay_until) break;
+            m->work_delay_until = 0;
             if(m->advance_count >= m->advance_target) {
                 m->phase = RL_PROBING;
                 snprintf(m->status, sizeof(m->status), "Probing — replay cap...");
-                // Replay original captured signal now
                 m->tx_pos = 0; s_rl_rep = app;
-                subghz_devices_idle(app->device);
-                subghz_devices_start_async_tx(app->device, rl_replay_cb, NULL);
+                rollforge_rf_start_tx(app, rl_replay_cb, NULL);
                 app->rf_op = RF_REPLAYING;
             } else {
                 rl_work_start(app);
                 snprintf(m->status, sizeof(m->status), "Press keyfob %u/%u",
                     m->advance_count + 1, m->advance_target);
             }
+            break;
+        }
+        if(m->work_ready && m->work_count >= RF_MIN_EDGES) {
+            rl_work_stop(app);
+            m->advance_count++;
+            notification_message(app->notif, &sequence_success);
+            m->work_delay_until = now + 200; // 200ms non-blocking warten
         }
         break;
     }

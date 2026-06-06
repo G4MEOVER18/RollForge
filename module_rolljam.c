@@ -1,5 +1,6 @@
 // module_rolljam.c — RollJam non-blocking state machine for RollForge
 #include "module_rolljam.h"
+#include "rollforge_rf.h"
 #include <gui/canvas.h>
 #include <lib/subghz/devices/devices.h>
 #include <lib/toolbox/level_duration.h>
@@ -53,8 +54,7 @@ static LevelDuration rj_replay_cb(void* ctx) {
 static void rj_jam_start(RollForgeApp* app) {
     if(!app->device) return;
     s_jam = true;
-    subghz_devices_idle(app->device);
-    subghz_devices_start_async_tx(app->device, rj_jam_cb, NULL);
+    rollforge_rf_start_tx(app, rj_jam_cb, NULL);
     app->rf_op = RF_JAMMING;
 }
 
@@ -70,8 +70,7 @@ static void rj_cap_start(RollForgeApp* app, RfSig* sig) {
     if(!app->device) return;
     sig->count = 0; sig->ready = false;
     s_cap = sig;
-    subghz_devices_idle(app->device);
-    subghz_devices_start_async_rx(app->device, rj_rx_cb, NULL);
+    rollforge_rf_start_rx(app, rj_rx_cb, NULL);
     app->rf_op = RF_CAPTURING;
 }
 
@@ -205,8 +204,7 @@ void rj_tick(RollForgeApp* app) {
             rj_cap_stop(app);
             // Immediately start replay
             m->tx_pos = 0; s_rep = app;
-            subghz_devices_idle(app->device);
-            subghz_devices_start_async_tx(app->device, rj_replay_cb, NULL);
+            rollforge_rf_start_tx(app, rj_replay_cb, NULL);
             app->rf_op = RF_REPLAYING;
             m->phase = RJ_REPLAY;
             snprintf(m->status, sizeof(m->status), "Replaying A... (B saved)");

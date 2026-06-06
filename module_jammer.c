@@ -1,5 +1,6 @@
 // module_jammer.c — CC1101 OOK interference jammer for RollForge
 #include "module_jammer.h"
+#include "rollforge_rf.h"
 #include <gui/canvas.h>
 #include <lib/subghz/devices/devices.h>
 #include <lib/toolbox/level_duration.h>
@@ -26,8 +27,10 @@ void jm_enter(RollForgeApp* app) {
 void jm_exit(RollForgeApp* app) {
     if(app->jm.phase == JM_JAMMING) {
         s_jm_active = false;
-        subghz_devices_stop_async_tx(app->device);
-        subghz_devices_idle(app->device);
+        if(app->device) {
+            subghz_devices_stop_async_tx(app->device);
+            subghz_devices_idle(app->device);
+        }
     }
     app->jm.phase = JM_IDLE;
     app->rf_op = RF_IDLE;
@@ -40,37 +43,33 @@ void jm_input(RollForgeApp* app, InputEvent* ev) {
     case InputKeyUp:
         if(m->freq_idx > 0) m->freq_idx--;
         app->frequency = JM_FREQS[m->freq_idx];
-        if(m->phase == JM_JAMMING) {
-            // reconfigure frequency
+        if(m->phase == JM_JAMMING && app->device) {
             s_jm_active = false;
             subghz_devices_stop_async_tx(app->device);
-            subghz_devices_idle(app->device);
-            subghz_devices_set_frequency(app->device, app->frequency);
+            rollforge_rf_start_tx(app, jm_tx_cb, NULL);
             s_jm_active = true;
-            subghz_devices_start_async_tx(app->device, jm_tx_cb, NULL);
+            app->rf_op = RF_JAMMING;
         }
         snprintf(m->status, sizeof(m->status), "%s", JM_FREQ_LABELS[m->freq_idx]);
         break;
     case InputKeyDown:
         if(m->freq_idx < JM_FREQ_COUNT - 1) m->freq_idx++;
         app->frequency = JM_FREQS[m->freq_idx];
-        if(m->phase == JM_JAMMING) {
+        if(m->phase == JM_JAMMING && app->device) {
             s_jm_active = false;
             subghz_devices_stop_async_tx(app->device);
-            subghz_devices_idle(app->device);
-            subghz_devices_set_frequency(app->device, app->frequency);
+            rollforge_rf_start_tx(app, jm_tx_cb, NULL);
             s_jm_active = true;
-            subghz_devices_start_async_tx(app->device, jm_tx_cb, NULL);
+            app->rf_op = RF_JAMMING;
         }
         snprintf(m->status, sizeof(m->status), "%s", JM_FREQ_LABELS[m->freq_idx]);
         break;
     case InputKeyOk:
+        if(!app->device) { snprintf(m->status, sizeof(m->status), "ERR: No CC1101"); break; }
         if(m->phase == JM_IDLE) {
             app->frequency = JM_FREQS[m->freq_idx];
-            subghz_devices_set_frequency(app->device, app->frequency);
             s_jm_active = true;
-            subghz_devices_idle(app->device);
-            subghz_devices_start_async_tx(app->device, jm_tx_cb, NULL);
+            rollforge_rf_start_tx(app, jm_tx_cb, NULL);
             app->rf_op = RF_JAMMING;
             m->phase   = JM_JAMMING;
             snprintf(m->status, sizeof(m->status), "JAMMING %s", JM_FREQ_LABELS[m->freq_idx]);

@@ -61,6 +61,7 @@ typedef struct {
     uint8_t  menu_idx, advance_count, advance_target;
     volatile size_t tx_pos;
     uint32_t cap_start_ms;
+    uint32_t work_delay_until; // tick-basierter Delay für RL_ADVANCE (ersetzt furi_delay_ms)
     char     status[64];
 } ModRollLab;
 
