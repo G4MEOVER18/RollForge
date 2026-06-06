@@ -49,7 +49,7 @@ void rollforge_rf_start_tx(RollForgeApp* app, FuriHalSubGhzAsyncTxCallback cb, v
     subghz_devices_start_async_tx(app->device, cb, ctx);
 }
 
-void rollforge_rf_start_rx(RollForgeApp* app, FuriHalSubGhzAsyncRxCallback cb, void* ctx) {
+void rollforge_rf_start_rx(RollForgeApp* app, FuriHalSubGhzCaptureCallback cb, void* ctx) {
     if(!app->device) return;
     subghz_devices_idle(app->device);
     subghz_devices_load_preset(app->device, FuriHalSubGhzPresetOok650Async, NULL);
