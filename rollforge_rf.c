@@ -4,14 +4,23 @@
 
 bool rollforge_rf_init(RollForgeApp* app) {
     subghz_devices_init();
-    app->device = subghz_devices_get_by_name(SUBGHZ_DEVICE_CC1101_EXT_NAME);
-    app->dev_is_ext = (app->device != NULL);
-    if(!app->device) app->device = subghz_devices_get_by_name(SUBGHZ_DEVICE_CC1101_INT_NAME);
-    if(!app->device) {
-        subghz_devices_deinit();
-        return false;
+
+    // Ext CC1101: is_connect() vor begin() — begin() crasht mit furi_check wenn kein HW
+    const SubGhzDevice* dev = subghz_devices_get_by_name(SUBGHZ_DEVICE_CC1101_EXT_NAME);
+    if(dev && subghz_devices_is_connect(dev) && subghz_devices_begin(dev)) {
+        app->device     = dev;
+        app->dev_is_ext = true;
+    } else {
+        // Fallback: interner CC1101
+        dev = subghz_devices_get_by_name(SUBGHZ_DEVICE_CC1101_INT_NAME);
+        if(!dev || !subghz_devices_begin(dev)) {
+            subghz_devices_deinit();
+            return false;
+        }
+        app->device     = dev;
+        app->dev_is_ext = false;
     }
-    subghz_devices_begin(app->device);
+
     subghz_devices_reset(app->device);
     subghz_devices_load_preset(app->device, FuriHalSubGhzPresetOok650Async, NULL);
     subghz_devices_set_frequency(app->device, app->frequency);
