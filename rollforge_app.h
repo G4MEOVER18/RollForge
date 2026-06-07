@@ -16,7 +16,7 @@
 #define RF_FREQ_DEF  433920000UL
 
 typedef enum { RF_IDLE, RF_CAPTURING, RF_JAMMING, RF_REPLAYING } RfOp;
-typedef enum { MOD_MENU, MOD_ROLLJAM, MOD_ROLLLAB, MOD_JAMMER }  ActiveMod;
+typedef enum { MOD_MENU, MOD_ROLLJAM, MOD_ROLLLAB, MOD_JAMMER, MOD_ABOUT }  ActiveMod;
 
 typedef struct {
     volatile uint32_t buf[RF_SIG_BUF];

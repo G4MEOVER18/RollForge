@@ -1,6 +1,7 @@
 // module_rolllab.c — RollLab research modes for RollForge
 #include "module_rolllab.h"
 #include "rollforge_rf.h"
+#include "rollforge_storage.h"
 #include <gui/canvas.h>
 #include <lib/subghz/devices/devices.h>
 #include <lib/toolbox/level_duration.h>
@@ -167,6 +168,10 @@ void rl_input(RollForgeApp* app, InputEvent* ev) {
 
     case RL_ANALYZE_VIEW:
         if(ev->key == InputKeyBack) { m->phase = RL_MENU; rl_stop_any(app); }
+        else if(ev->key == InputKeyLeft && m->ref_sig.count > 0) {
+            bool ok = rollforge_save_sig((const RfSig*)&m->ref_sig, app->frequency, "rl_ref");
+            snprintf(m->status, sizeof(m->status), ok ? "Gespeichert" : "Save Fehler");
+        }
         break;
 
     case RL_REPLAY_READY:
@@ -177,6 +182,9 @@ void rl_input(RollForgeApp* app, InputEvent* ev) {
             app->rf_op = RF_REPLAYING;
             m->phase = RL_REPLAYING;
             snprintf(m->status, sizeof(m->status), "Replaying...");
+        } else if(ev->key == InputKeyLeft && m->ref_sig.count > 0) {
+            bool ok = rollforge_save_sig((const RfSig*)&m->ref_sig, app->frequency, "rl_ref");
+            snprintf(m->status, sizeof(m->status), ok ? "Gespeichert" : "Save Fehler");
         }
         break;
 

@@ -9,12 +9,13 @@
 #include <input/input.h>
 #include <notification/notification_messages.h>
 
-#define MENU_COUNT 3
+#define MENU_COUNT 4
 
 static const char* MENU_LABELS[MENU_COUNT] = {
     "RollJam  (Jam+Capture+Replay)",
     "RollLab  (Analyzer/Research)",
     "RF Jammer (CC1101)",
+    "About / Info",
 };
 
 // ---------------------------------------------------------------------------
@@ -46,6 +47,19 @@ static void rf_draw_menu(Canvas* canvas, RollForgeApp* app) {
     }
 }
 
+static void rf_draw_about(Canvas* canvas, RollForgeApp* app) {
+    UNUSED(app);
+    canvas_set_font(canvas, FontPrimary);
+    canvas_draw_str(canvas, 0, 10, "RollForge v1.0");
+    canvas_draw_line(canvas, 0, 12, 127, 12);
+    canvas_set_font(canvas, FontSecondary);
+    canvas_draw_str(canvas, 0, 24, "by G4MEOVER18");
+    canvas_draw_str(canvas, 0, 34, "RollJam + RollLab +");
+    canvas_draw_str(canvas, 0, 44, "CC1101 Jammer");
+    canvas_draw_str(canvas, 0, 54, "github.com/G4MEOVER18");
+    canvas_draw_str(canvas, 0, 63, "[Back] zurueck");
+}
+
 static void rollforge_draw_cb(Canvas* canvas, void* ctx) {
     RollForgeApp* app = ctx;
     canvas_clear(canvas);
@@ -54,6 +68,7 @@ static void rollforge_draw_cb(Canvas* canvas, void* ctx) {
     case MOD_ROLLJAM: rj_draw(canvas, app);          break;
     case MOD_ROLLLAB: rl_draw(canvas, app);          break;
     case MOD_JAMMER:  jm_draw(canvas, app);          break;
+    case MOD_ABOUT:   rf_draw_about(canvas, app);    break;
     }
 }
 
@@ -165,7 +180,13 @@ int32_t rollforge_app(void* p) {
                     rollforge_rf_switch(app);
                     break;
                 case InputKeyOk:
-                    mod_enter(app, (ActiveMod)(app->menu_idx + 1));
+                    // Menu-Index 0..2 -> MOD_ROLLJAM/MOD_ROLLLAB/MOD_JAMMER
+                    // Menu-Index 3    -> MOD_ABOUT
+                    if(app->menu_idx == 3) {
+                        app->active = MOD_ABOUT;
+                    } else {
+                        mod_enter(app, (ActiveMod)(app->menu_idx + 1));
+                    }
                     break;
                 case InputKeyBack:
                     running = false;

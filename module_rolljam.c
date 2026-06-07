@@ -1,6 +1,7 @@
 // module_rolljam.c — RollJam non-blocking state machine for RollForge
 #include "module_rolljam.h"
 #include "rollforge_rf.h"
+#include "rollforge_storage.h"
 #include <gui/canvas.h>
 #include <lib/subghz/devices/devices.h>
 #include <lib/toolbox/level_duration.h>
@@ -122,6 +123,15 @@ void rj_input(RollForgeApp* app, InputEvent* ev) {
         } else if(m->phase == RJ_DONE) {
             m->phase = RJ_IDLE;
             snprintf(m->status, sizeof(m->status), "[OK] Start  [Back] Menu");
+        }
+    } else if(ev->key == InputKeyDown) {
+        // Save aktuelles Signal als .sub
+        if(m->phase == RJ_CAPTURED && m->sig_a.count > 0) {
+            bool ok = rollforge_save_sig((const RfSig*)&m->sig_a, app->frequency, "rj_A");
+            snprintf(m->status, sizeof(m->status), ok ? "A gespeichert" : "Save Fehler");
+        } else if(m->phase == RJ_DONE && m->sig_b.count > 0) {
+            bool ok = rollforge_save_sig((const RfSig*)&m->sig_b, app->frequency, "rj_B");
+            snprintf(m->status, sizeof(m->status), ok ? "B gespeichert" : "Save Fehler");
         }
     }
 }
@@ -269,5 +279,8 @@ void rj_draw(Canvas* canvas, RollForgeApp* app) {
         canvas_draw_str(canvas, 0, 50, buf);
     }
 
-    canvas_draw_str(canvas, 0, 63, "[Back]=Menu");
+    if(m->phase == RJ_CAPTURED || m->phase == RJ_DONE)
+        canvas_draw_str(canvas, 0, 63, "[Back]=Menu  [v]=Save");
+    else
+        canvas_draw_str(canvas, 0, 63, "[Back]=Menu");
 }
