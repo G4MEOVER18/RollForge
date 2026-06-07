@@ -35,11 +35,15 @@ static void rf_draw_menu(Canvas* canvas, RollForgeApp* app) {
     }
     canvas_set_color(canvas, ColorBlack);
 
-    // RF indicator bottom-right
+    // Antennen-Anzeige: unten rechts aktives Gerät, links Umschalttipp
     const char* dev_label = app->device
         ? (app->dev_is_ext ? "CC1101-EXT" : "CC1101-INT")
         : "CC1101 ERR";
     canvas_draw_str_aligned(canvas, 127, 63, AlignRight, AlignBottom, dev_label);
+    if(app->device_ext) {
+        // EXT verfügbar → Umschalttipp anzeigen
+        canvas_draw_str(canvas, 0, 63, app->dev_is_ext ? "[<]INT" : "[<]EXT");
+    }
 }
 
 static void rollforge_draw_cb(Canvas* canvas, void* ctx) {
@@ -156,6 +160,9 @@ int32_t rollforge_app(void* p) {
                     break;
                 case InputKeyDown:
                     if(app->menu_idx < MENU_COUNT - 1) app->menu_idx++;
+                    break;
+                case InputKeyLeft:
+                    rollforge_rf_switch(app);
                     break;
                 case InputKeyOk:
                     mod_enter(app, (ActiveMod)(app->menu_idx + 1));

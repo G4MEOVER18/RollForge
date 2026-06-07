@@ -60,9 +60,8 @@ static void rj_jam_start(RollForgeApp* app) {
 
 static void rj_jam_stop(RollForgeApp* app) {
     s_jam = false;
-    if(!app->device) return;
-    subghz_devices_stop_async_tx(app->device);
-    subghz_devices_idle(app->device);
+    if(app->device && (app->rf_op == RF_JAMMING || app->rf_op == RF_REPLAYING))
+        subghz_devices_stop_async_tx(app->device);
     app->rf_op = RF_IDLE;
 }
 
@@ -75,20 +74,15 @@ static void rj_cap_start(RollForgeApp* app, RfSig* sig) {
 }
 
 static void rj_cap_stop(RollForgeApp* app) {
-    if(!app->device) { s_cap = NULL; return; }
-    subghz_devices_stop_async_rx(app->device);
     s_cap = NULL;
-    subghz_devices_idle(app->device);
+    if(app->device && app->rf_op == RF_CAPTURING)
+        subghz_devices_stop_async_rx(app->device);
     app->rf_op = RF_IDLE;
 }
 
 static void rj_rf_clean(RollForgeApp* app) {
     s_jam = false; s_cap = NULL; s_rep = NULL;
-    if(!app->device) return;
-    subghz_devices_stop_async_tx(app->device);
-    subghz_devices_stop_async_rx(app->device);
-    subghz_devices_idle(app->device);
-    app->rf_op = RF_IDLE;
+    rollforge_rf_idle(app);
 }
 
 // ---------------------------------------------------------------------------

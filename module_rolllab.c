@@ -70,9 +70,8 @@ static void rl_ref_start(RollForgeApp* app) {
 
 static void rl_ref_stop(RollForgeApp* app) {
     s_ref_app = NULL;
-    if(!app->device) return;
-    subghz_devices_stop_async_rx(app->device);
-    subghz_devices_idle(app->device);
+    if(app->device && app->rf_op == RF_CAPTURING)
+        subghz_devices_stop_async_rx(app->device);
     app->rf_op = RF_IDLE;
 }
 
@@ -86,19 +85,14 @@ static void rl_work_start(RollForgeApp* app) {
 
 static void rl_work_stop(RollForgeApp* app) {
     s_work_app = NULL;
-    if(!app->device) return;
-    subghz_devices_stop_async_rx(app->device);
-    subghz_devices_idle(app->device);
+    if(app->device && app->rf_op == RF_CAPTURING)
+        subghz_devices_stop_async_rx(app->device);
     app->rf_op = RF_IDLE;
 }
 
 static void rl_stop_any(RollForgeApp* app) {
     s_ref_app = NULL; s_work_app = NULL; s_rl_rep = NULL;
-    if(!app->device) { app->rf_op = RF_IDLE; return; }
-    subghz_devices_stop_async_rx(app->device);
-    subghz_devices_stop_async_tx(app->device);
-    subghz_devices_idle(app->device);
-    app->rf_op = RF_IDLE;
+    rollforge_rf_idle(app);
 }
 
 // ---------------------------------------------------------------------------

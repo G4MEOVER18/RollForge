@@ -78,7 +78,9 @@ typedef struct {
 typedef struct {
     ActiveMod           active;
     uint8_t             menu_idx;
-    const SubGhzDevice* device;
+    const SubGhzDevice* device;     // aktiv genutztes Gerät
+    const SubGhzDevice* device_int; // int CC1101, immer gesetzt nach init
+    const SubGhzDevice* device_ext; // ext CC1101, NULL wenn nicht verbunden
     bool                dev_is_ext; // set at init, safe to read from any thread
     uint32_t            frequency;
     RfOp                rf_op;
