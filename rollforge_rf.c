@@ -5,18 +5,21 @@
 bool rollforge_rf_init(RollForgeApp* app) {
     subghz_devices_init();
 
-    // Ext CC1101: is_connect() vor begin() — begin() crasht mit furi_check wenn kein HW
+    // Ext CC1101: is_connect() prüft physische SPI-Verbindung vor begin()
+    // Für int CC1101: .begin=NULL → subghz_devices_begin() gibt false zurück,
+    // das ist kein Fehler sondern normal (return-Wert NICHT als Fehlerindikator nutzen!)
     const SubGhzDevice* dev = subghz_devices_get_by_name(SUBGHZ_DEVICE_CC1101_EXT_NAME);
-    if(dev && subghz_devices_is_connect(dev) && subghz_devices_begin(dev)) {
+    if(dev && subghz_devices_is_connect(dev)) {
+        subghz_devices_begin(dev); // ext: begin wirklich ausführen, return ignorieren
         app->device     = dev;
         app->dev_is_ext = true;
     } else {
-        // Fallback: interner CC1101
         dev = subghz_devices_get_by_name(SUBGHZ_DEVICE_CC1101_INT_NAME);
-        if(!dev || !subghz_devices_begin(dev)) {
-            subghz_devices_deinit();
+        if(!dev) {
+            // rollforge_rf_deinit() ruft subghz_devices_deinit() auf — kein Doppelaufruf!
             return false;
         }
+        subghz_devices_begin(dev); // int: begin=NULL → false, kein Fehler
         app->device     = dev;
         app->dev_is_ext = false;
     }
