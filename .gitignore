@@ -1,0 +1,5 @@
+dist/
+.vscode/
+*.fap
+ufbt_build.log
+.ufbt/
