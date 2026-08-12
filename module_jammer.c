@@ -45,7 +45,8 @@ void jm_input(RollForgeApp* app, InputEvent* ev) {
         app->frequency = JM_FREQS[m->freq_idx];
         if(m->phase == JM_JAMMING && app->device) {
             s_jm_active = false;
-            subghz_devices_stop_async_tx(app->device);
+            // Kein direkter Stop hier: rollforge_rf_start_tx() -> rf_stop_current()
+            // stoppt bereits (rf_op noch RF_JAMMING). Doppel-Stop = furi_check-Crash.
             rollforge_rf_start_tx(app, jm_tx_cb, NULL);
             s_jm_active = true;
             app->rf_op = RF_JAMMING;
@@ -57,7 +58,8 @@ void jm_input(RollForgeApp* app, InputEvent* ev) {
         app->frequency = JM_FREQS[m->freq_idx];
         if(m->phase == JM_JAMMING && app->device) {
             s_jm_active = false;
-            subghz_devices_stop_async_tx(app->device);
+            // Kein direkter Stop hier: rollforge_rf_start_tx() -> rf_stop_current()
+            // stoppt bereits (rf_op noch RF_JAMMING). Doppel-Stop = furi_check-Crash.
             rollforge_rf_start_tx(app, jm_tx_cb, NULL);
             s_jm_active = true;
             app->rf_op = RF_JAMMING;
