@@ -1,5 +1,7 @@
 # RollForge
 
+[![CI](https://github.com/G4MEOVER18/RollForge/actions/workflows/flipper-fap.yml/badge.svg)](https://github.com/G4MEOVER18/RollForge/actions/workflows/flipper-fap.yml)
+
 > Flipper Zero FAP · RollJam + RollLab + RF Jammer in einer App
 
 ![Version](https://img.shields.io/badge/version-1.0-blue)
